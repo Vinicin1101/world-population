@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Temperatura em tempo real</title>
+
+    <!-- Bootstrap 5.3 -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-GLhlTQ8iRABdZLl6O3oVMWSktQOp6b7In1Zl3/Jr59b6EGGoI1aFkw7cmDA6j6gD"
+      crossorigin="anonymous"
+    />
+  </head>
+
+  <body>
+    <p
+      class="font-monospace fw-light text-white position-absolute bottom-0 m-0"
+    >
+      v 1.0.0
+    </p>
+    <p class="fw-light text-white position-absolute bottom-0 end-0 m-0">
+      modelo 3D por
+      <a href="https://sketchfab.com/karinkreeft8" class="text-warning"
+        >@BamPistache</a
+      >
+    </p>
+    <!-- Jquery -->
+    <script
+      src="https://code.jquery.com/jquery-3.6.3.slim.min.js"
+      integrity="sha256-ZwqZIVdD3iXNyGHbSYdsmWP//UBokj2FHAxKuSBKDSo="
+      crossorigin="anonymous"
+    ></script>
+
+    <!-- Bootstrap 5.3 -->
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-w76AqPfDkMBDXo30jS1Sgez6pr3x5MlQ1ZAGC+nuZB+EYdgRZgiwxhTBTkF7CXvN"
+      crossorigin="anonymous"
+    ></script>
+
+    <script
+      async
+      src="https://unpkg.com/es-module-shims@1.3.6/dist/es-module-shims.js"
+    ></script>
+
+    <!-- Mapeamento de importações -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.148.0/build/three.module.js",
+          "OrbitControls": "https://unpkg.com/three@0.148.0/examples/jsm/controls/OrbitControls.js",
+          "UnrealBloomPass": "https://unpkg.com/three@0.148.0/examples/jsm/postprocessing/UnrealBloomPass.js",
+          "EffectComposer": "https://unpkg.com/three@0.148.0/examples/jsm/postprocessing/EffectComposer.js",
+          "RenderPass": "https://unpkg.com/three@0.148.0/examples/jsm/postprocessing/RenderPass.js",
+          "GLTFLoader": "https://unpkg.com/three@0.148.0/examples/jsm/loaders/GLTFLoader.js",
+          "FontLoader": "https://unpkg.com/three@0.148.0/examples/jsm/loaders/FontLoader.js",
+          "TextGeometry": "https://unpkg.com/three@0.148.0/examples/jsm/geometries/TextGeometry.js"
+        }
+      }
+    </script>
+
+    <!-- Meu Script -->
+    <script type="module">
+      // Imports do Three JS
+      import * as THREE from "three";
+      import * as OrbitControls from "OrbitControls";
+      import * as Bloom from "UnrealBloomPass";
+      import * as Effect from "EffectComposer";
+      import * as RenderPass from "RenderPass";
+      import * as GLTFLoader from "GLTFLoader";
+      import * as FontLoader from "FontLoader";
+      import * as Text from "TextGeometry";
+
+      // Importando os dados
+      import coordination from "./json/coordination.json" assert { type: "json" };
+      import population from "./json/population.json" assert { type: "json" };
+
+      // Posição do mouse
+      let mouseX, mouseY;
+
+      // Tratando os dados
+      let jsonFinal = population.map((item1) => {
+        let item2 = coordination.find(
+          (item2) => item2.country == item1.country
+        );
+        return { ...item1, ...item2 };
+      });
+
+      // Definição da cena
+      const cena = new THREE.Scene();
+      cena.background = new THREE.Color("#000");
+
+      // Definição da camera
+      const camera = new THREE.PerspectiveCamera(
+        75,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        1000
+      );
+      camera.position.z = 55;
+
+      // Definição do Renderizador
+      const renderer = new THREE.WebGLRenderer();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+
+      // Spotlight
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+      // Definindo um ponto de luz
+      const light = new THREE.SpotLight("#626262");
+      light.intensity = 1;
+      light.castShadow = true; // default false
+      light.position.set(150, 90, 100);
+      cena.add(light);
+
+      // Definindo as propriedades da sombra
+      light.shadow.mapSize.width = 0;
+      light.shadow.mapSize.height = 0;
+
+      // Texto
+      let label;
+
+      // Criando os retangulos
+      function SetHeight(valor) {
+        return Math.ceil(valor / 30000000);
+      }
+      let group = new THREE.Group();
+      jsonFinal.forEach((item) => {
+        let geometry = new THREE.BoxGeometry(
+          0.3,
+          SetHeight(item.population),
+          0.3
+        );
+        let material = new THREE.MeshPhongMaterial({
+          color: "#fff",
+          emissive: "#fff",
+          emissiveIntensity: 1,
+          transparent: true,
+          opacity: 0.5,
+        });
+        let mesh = new THREE.Mesh(geometry, material);
+
+        // converte as latitudes e longitudes em cordenadas esféricas
+        const phi = (90 - item.latitude) * (Math.PI / 180);
+        const theta = (180 - item.longitude) * (Math.PI / 180);
+
+        let raio = 16.5;
+
+        // Definindo a posição no globo
+        mesh.position.set(
+          raio * Math.sin(phi) * Math.cos(theta),
+          raio * Math.cos(phi),
+          raio * Math.sin(phi) * Math.sin(theta)
+        );
+
+        // Cria um plano paralelo a superficie para adicionar o retangulo no angulo certo
+        const plane = new THREE.Plane();
+        plane.setFromNormalAndCoplanarPoint(
+          mesh.position.clone().normalize(),
+          mesh.position
+        );
+
+        const quaternion = new THREE.Quaternion();
+
+        // Alinhando o retangulo com o plano
+        quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), plane.normal);
+        mesh.applyQuaternion(quaternion);
+
+        // Adicionando as informações necessárias para o retangulo
+        mesh.userData = {
+          country: item.country,
+          population: item.population,
+          code: item.alpha2,
+        };
+
+        group.add(mesh);
+
+        // Corrigindo a rotação para os pontos ficarem na posição correta (os numeros foram pura especulação)
+        group.rotation.y += 0.000005;
+        group.rotation.y += 0.05765;
+        group.rotation.x += 0.00008;
+      });
+
+      // Importando o modelo
+      const loader = new GLTFLoader.GLTFLoader();
+      let grupoGlobo;
+      loader.load(
+        "/model/globo.gltf",
+        function (gltf) {
+          grupoGlobo = gltf.scene;
+
+          // Adicionando o grupo de retangulos (isso faz os negocio girar tudo junto)
+          grupoGlobo.add(group);
+          cena.add(gltf.scene);
+        },
+        undefined,
+        function (error) {
+          console.error(error);
+        }
+      );
+
+      // Geometria do texto
+      function countryInfo(obj, { country, population, code } = info) {
+        const loader = new FontLoader.FontLoader();
+
+        loader.load("json/Roboto_Regular.json", function (font) {
+          const material = new THREE.LineBasicMaterial({
+            color: "#fff",
+          });
+
+          const message = `${country} - ${code}\n${population.toLocaleString(
+            "pt-BR"
+          )} habitantes`;
+
+          const shapes = font.generateShapes(message, 2);
+
+          const geometry = new THREE.ShapeGeometry(shapes);
+
+          // Adiciono o mesh ao label
+          label = new THREE.Mesh(geometry, material);
+
+          // Adiciono o label
+          obj.attach(label);
+
+          // Define a posição
+          const y = obj.geometry.parameters.height / 2;
+          label.position.set(4, y, 4);
+
+          console.log(label.position);
+
+          label.lookAt(camera.position);
+        });
+      }
+
+      function enderman() {
+        // Faz com que o label sempre esteja olhando para a câmera
+      }
+
+      // Adicionando event listener para mousemove
+      window.addEventListener("click", onMouseClick, false);
+
+      // Criando um raycaster
+      const raycaster = new THREE.Raycaster();
+
+      // Variáveis para armazenar as informações do retângulo selecionado
+      let selectedRectangle;
+      let selectedRectangleInfo;
+      let lastObj = [];
+
+      function onMouseClick(event) {
+        // Obtendo a posição do mouse na tela
+        const mouse = new THREE.Vector2();
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+        // Atualizando o raycaster com a posição do mouse
+        raycaster.setFromCamera(mouse, camera);
+
+        // Verificando se o mouse está sobre algum dos retângulos
+        const intersects = raycaster.intersectObjects(group.children);
+        if (intersects.length > 0) {
+          // Armazenando o retângulo selecionado e as informações adicionais
+          selectedRectangle = intersects[0].object;
+          selectedRectangleInfo = selectedRectangle.userData;
+
+          const dis = intersects[0].distance;
+
+          // Exibindo as informações adicionais na tela
+          displayRectangleInfo(selectedRectangle, selectedRectangleInfo);
+
+          lastObj.push(selectedRectangle);
+        } else {
+          hideRectangleInfo(lastObj);
+        }
+      }
+
+      // Exibindo as informações adicionais na tela
+      function displayRectangleInfo(obj, info) {
+        // calcula um label novo
+        if (!lastObj.includes(obj)) {
+          countryInfo(obj, info);
+        }
+
+        obj.material.color.set(new THREE.Color(0x0000ff));
+        obj.material.emissive.set(new THREE.Color(0xe30000));
+        obj.material.emissiveIntensity = 1;
+        obj.material.opacity = 1;
+      }
+
+      function hideRectangleInfo(last) {
+        setTimeout(() => {
+          last.forEach((e) => {
+            e.material.color.set(new THREE.Color(0xffffff));
+            e.material.emissive.set(new THREE.Color(0xffffff));
+            e.material.emissiveIntensity = 1;
+            e.material.opacity = 0.5;
+
+            // Remove o todos os
+            e.clear();
+          });
+
+          lastObj = [];
+        }, 100);
+      }
+
+      // Controles
+      const controle = new OrbitControls.OrbitControls(
+        camera,
+        renderer.domElement
+      );
+
+      // Post processing
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+      // Novo renderizador (tunado) (fake sei la)
+      const renderScene = new RenderPass.RenderPass(cena, camera);
+
+      // Paremetros do Bloom (efeito neon sei la)
+      const BloomParam = {
+        exposure: 1,
+        bloomStrength: 1,
+        bloomThreshold: 0,
+        bloomRadius: 1.25,
+      };
+
+      // Unreal Bloom (não sei oq é exatamente, mas faz funcionar)
+      const bloomPass = new Bloom.UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        1.3,
+        0.1,
+        0.1
+      );
+      bloomPass.threshold = BloomParam.bloomThreshold;
+      bloomPass.strength = BloomParam.bloomStrength;
+      bloomPass.radius = BloomParam.bloomRadius;
+
+      // Composição final (o que realmente vai renderizar)
+      const composer = new Effect.EffectComposer(renderer);
+      composer.addPass(renderScene);
+      composer.addPass(bloomPass);
+
+      // Adicionando ao HTML
+      document.body.appendChild(renderer.domElement);
+
+      // Renderizando a cena
+      function animate() {
+        // callback
+        requestAnimationFrame(animate);
+
+        // Rotação do globo
+        grupoGlobo.rotation.y += 0.0007;
+
+        // faz o label olhar para a camera
+        if (label) {
+          label.lookAt(camera.position);
+        }
+
+        // Atualização da composição e dos controles
+        controle.update();
+        updateCena();
+      }
+
+      function updateCena() {
+        composer.render();
+      }
+
+      animate();
+    </script>
+    <p class="text-black position-absolute bottom-0 end-50 m-0">
+      Eu vou arrumar os bugs :(
+    </p>
+  </body>
+</html>
